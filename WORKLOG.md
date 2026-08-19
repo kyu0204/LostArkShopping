@@ -173,15 +173,26 @@ data/           검증 산출물
 
 ## 8. 실행
 
+**`run.bat` 더블클릭.** 가상환경 생성 → 의존성 설치 → 실행까지 알아서 한다.
+처음 한 번만 1~2분 걸리고 이후로는 바로 뜬다. 키가 없으면 앱이 입력 창을 먼저 띄운다.
+
+수동으로 하려면:
+
 ```bash
 python -m venv .venv
 .venv/Scripts/python.exe -m pip install -r requirements.txt
-
 .venv/Scripts/python.exe scripts/setup_key.py     # API 키 입력 (.env 저장)
-.venv/Scripts/python.exe -m app                   # 앱 실행
+.venv/Scripts/python.exe -m app                   # 또는 python run.py
 ```
 
+`python -m app`은 현재 디렉터리가 프로젝트 루트여야 한다. `run.py`는 어디서 실행해도 된다.
+
 키는 `.env` 평문이다(`keyring` 전환은 보류). `.gitignore`에 있어 커밋되지 않는다.
+
+> `run.bat`은 **ASCII만** 쓴다. cmd.exe가 `chcp` 이후 배치 파일을 한 줄씩 다시 읽으면서
+> 멀티바이트 문자에서 바이트 오프셋이 어긋나 파싱이 깨진다. 한글 메시지를 넣었다가
+> `'확인해라.' is not recognized as an internal or external command` 로 죽었다.
+> 한글은 파이썬 쪽에 둔다.
 
 검증 재현:
 
