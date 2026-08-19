@@ -1,0 +1,116 @@
+{
+  "_note": "probe_quality_formula.py(힘민지) 와 probe_hp_quality.py(체력) 가 실응답으로 검증한 표다. 두 스탯 모두 값 = ceil(min + width × 품질/100), 품질 = floor((값 − min) / width × 100) 격자 위에 정확히 얹힌다.",
+  "index": "min_by_polish 의 인덱스 = 연마 단계(0~3)",
+  "ancient_t4": {
+    "힘민지": {
+      "200030": {
+        "width": 1935,
+        "min_by_polish": [
+          9156,
+          9414,
+          9930,
+          10962
+        ],
+        "verified": true
+      },
+      "200020": {
+        "width": 2083,
+        "min_by_polish": [
+          9861,
+          10139,
+          10695,
+          11806
+        ],
+        "verified": true
+      },
+      "200010": {
+        "width": 2679,
+        "min_by_polish": [
+          12678,
+          13035,
+          13749,
+          15178
+        ],
+        "verified": true
+      }
+    },
+    "체력": {
+      "200010": {
+        "0": {
+          "min": 3323,
+          "width": 349,
+          "verified": true
+        },
+        "1": {
+          "min": 3385,
+          "width": 349,
+          "verified": true
+        },
+        "2": {
+          "min": 3508,
+          "width": 349,
+          "verified": true
+        },
+        "3": {
+          "min": 3754,
+          "width": 349,
+          "verified": true
+        }
+      },
+      "200020": {
+        "0": {
+          "min": 2374,
+          "width": 249,
+          "verified": true
+        },
+        "1": {
+          "min": 2418,
+          "width": 249,
+          "verified": true
+        },
+        "2": {
+          "min": 2506,
+          "width": 249,
+          "verified": true
+        },
+        "3": {
+          "min": 2682,
+          "width": 249,
+          "verified": true
+        }
+      },
+      "200030": {
+        "0": {
+          "min": 1900,
+          "width": 199,
+          "verified": true
+        },
+        "1": {
+          "min": 1935,
+          "width": 199,
+          "verified": true
+        },
+        "2": {
+          "min": 2005,
+          "width": 199,
+          "verified": true
+        },
+        "3": {
+          "min": 2146,
+          "width": 199,
+          "verified": true
+        }
+      }
+    }
+  },
+  "grade_quality": {
+    "formula": "floor((힘민지품질 + 체력품질 + 400) / 6)",
+    "base": 400,
+    "div": 6,
+    "range": [
+      66,
+      100
+    ],
+    "note": "실응답 720건 전수 일치. 고대 T4 는 GradeQuality 가 66~100 구간만 쓴다. 힘민지 단독 품질과 다른 축이므로 서로 대신할 수 없다."
+  }
+}

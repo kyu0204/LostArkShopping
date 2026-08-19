@@ -1,0 +1,5 @@
+requests>=2.31
+python-dotenv>=1.0
+
+# UI 레이어만 필요. loa/ 는 이것 없이도 동작한다 (순수 레이어)
+PySide6-Essentials>=6.6
