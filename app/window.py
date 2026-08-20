@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QComboBox,
+    QDockWidget,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -27,6 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from loa import compare
 from loa import options as loa_options
 from loa import quality as q
 from loa.export import write_csv
@@ -34,6 +36,7 @@ from loa.models import Listing
 
 from .assets import IconFetcher, missing_names, pending_downloads
 from .card import CardDelegate
+from .exchange_panel import ExchangePanel
 from .search_panel import SearchPanel
 from .table import ListingProxy, ListingTableModel
 from .worker import CollectWorker
@@ -99,8 +102,21 @@ class MainWindow(QMainWindow):
         self.splitter = splitter
         self.setCentralWidget(splitter)
 
+        self._build_exchange_dock()
         self._build_status()
         self._build_shortcuts()
+
+    def _build_exchange_dock(self) -> None:
+        """§6.5 2층 — 카드(1층) 아래에 붙인다. 기본은 접어 둔다."""
+        self.exchange = ExchangePanel()
+        self.exchange.threshold_changed.connect(self._recompute_exchange)
+        dock = QDockWidget("교환비 추정 (2층)", self)
+        dock.setObjectName("exchange")
+        dock.setWidget(self.exchange)
+        dock.setAllowedAreas(Qt.BottomDockWidgetArea | Qt.RightDockWidgetArea)
+        self.addDockWidget(Qt.BottomDockWidgetArea, dock)
+        dock.hide()
+        self.exchange_dock = dock
 
     # ---- 오른쪽: 결과 ----
 
@@ -139,6 +155,12 @@ class MainWindow(QMainWindow):
         self.hide_bidonly.setChecked(True)  # 기본값 = 켬 (§7.4)
         self.hide_bidonly.toggled.connect(self._on_hide_toggled)
         head.addWidget(self.hide_bidonly)
+
+        self.exchange_button = QPushButton("교환비")
+        self.exchange_button.setCheckable(True)
+        self.exchange_button.setToolTip("F3 · 코호트에서 추정한 옵션 교환비 (§6.5 2층)")
+        self.exchange_button.toggled.connect(self._on_exchange_toggled)
+        head.addWidget(self.exchange_button)
 
         self.export_button = QPushButton("CSV 내보내기")
         self.export_button.setEnabled(False)
@@ -190,6 +212,7 @@ class MainWindow(QMainWindow):
             QShortcut(seq, self, activated=self.panel.search_button.click)
         QShortcut(QKeySequence(Qt.Key_Escape), self, activated=self._cancel)
         QShortcut(QKeySequence(Qt.Key_F2), self, activated=self.collapse_button.toggle)
+        QShortcut(QKeySequence(Qt.Key_F3), self, activated=self.exchange_button.toggle)
 
         quit_action = QAction("종료", self)
         quit_action.setShortcut(QKeySequence.Quit)
@@ -277,6 +300,7 @@ class MainWindow(QMainWindow):
 
         self._on_sort_changed()
         self._sync_baseline_selection()
+        self._recompute_exchange()  # 열려 있을 때만 계산한다
         self._update_hidden_note()
 
         valid = sum(1 for x in listings if not x.is_biddable_only)
@@ -310,6 +334,20 @@ class MainWindow(QMainWindow):
             self.table.scrollTo(proxy_index)
 
     # ---- 필터 / 내보내기 ----
+
+    def _on_exchange_toggled(self, shown: bool) -> None:
+        self.exchange_dock.setVisible(shown)
+        if shown:
+            self._recompute_exchange()
+
+    def _recompute_exchange(self, *_) -> None:
+        """추정은 코호트 전체를 훑는다 — 기준 행과 무관하다."""
+        if not self._listings or not self.exchange_dock.isVisible():
+            return
+        report = compare.analyze(
+            self._listings, self._grades, self.exchange.threshold.value()
+        )
+        self.exchange.show_report(report)
 
     def _on_collapse_toggled(self, collapsed: bool) -> None:
         if collapsed:
