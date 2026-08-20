@@ -150,10 +150,12 @@ class ListingTableModel(QAbstractTableModel):
         elif rows and rows[0].api_quality is not None:
             self._fixed["종합 품질"] = str(rows[0].api_quality)
 
-        if len({r.trade_allow_count for r in rows}) > 1:
-            cols.append(Column("trade", "거래횟수"))
-        elif rows:
-            self._fixed["거래횟수"] = str(rows[0].trade_allow_count)
+        # 팔찌는 교환 1회 고정이라 열도 배지도 만들지 않는다 — 정보량이 0이다
+        if not bracelet:
+            if len({r.trade_allow_count for r in rows}) > 1:
+                cols.append(Column("trade", "거래횟수"))
+            elif rows:
+                self._fixed["거래횟수"] = str(rows[0].trade_allow_count)
 
         if len({r.name for r in rows}) > 1:
             cols.append(Column("name", "이름", numeric=False))

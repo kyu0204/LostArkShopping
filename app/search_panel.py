@@ -41,6 +41,7 @@ MAX_FIXED_ROWS = 2
 AXIS_COMBAT = 2  # 전투 특성
 AXIS_SPECIAL = opt.ETC_BRACELET_SPECIAL  # 5 — 팔찌 특수 효과
 SUB_FIXED_COUNT, SUB_RANDOM_COUNT = 1, 2  # 고정 효과 수량 / 부여 효과 수량
+FIXED_RANDOM_SLOTS = 3  # 부여 효과 수량은 3 으로 고정 조회
 
 
 class OptionRow(QWidget):
@@ -191,8 +192,7 @@ class FixedEffectRow(QWidget):
     """
 
     changed = Signal()
-    TRAIT_MAX = 120
-    SPECIAL_MAX = 99999
+    TRAIT_MIN, TRAIT_MAX = 61, 120  # 고대 전투 특성 (관측·공식 확률표 일치)
 
     def __init__(self) -> None:
         super().__init__()
@@ -232,14 +232,39 @@ class FixedEffectRow(QWidget):
         self._on_option()
 
     def _on_option(self) -> None:
+        """축·옵션마다 실제 존재 범위가 다르다. 관측표에서 읽어 스핀박스를 맞춘다.
+
+        수치가 있어도 필터가 안 먹는 옵션이 있다 (ABILITY_ENGRAVE 계열).
+        그때는 입력을 막는다 — 넣어봐야 조용히 무시되기 때문이다.
+        """
         data = self.option.currentData()
-        self.value.setEnabled(data is not None)
-        if data is not None:
-            axis, _ = data
-            top = self.TRAIT_MAX if axis == AXIS_COMBAT else self.SPECIAL_MAX
-            self.value.setMaximum(top)
-            self.value.setSingleStep(1 if axis == AXIS_COMBAT else 100)
-            self.value.setSuffix(f"  (최대 {top:,})" if axis == AXIS_COMBAT else "")
+        if data is None:
+            self.value.setEnabled(False)
+            self.value.setSuffix("")
+            self.changed.emit()
+            return
+
+        axis, sub = data
+        if axis == AXIS_COMBAT:
+            lo, hi, step, ok = self.TRAIT_MIN, self.TRAIT_MAX, 1, True
+        else:
+            meta = opt.bracelet_ranges().get(sub.get("Text", ""), {})
+            ok = bool(meta.get("rangeable"))
+            lo = int(meta.get("min") or 0)
+            hi = int(meta.get("max") or 0)
+            span = hi - lo
+            step = 1 if span <= 20 else 10 if span <= 200 else 100 if span <= 5000 else 400
+
+        self.value.setEnabled(ok)
+        if ok:
+            self.value.setRange(0, hi)  # 0 = 아무거나
+            self.value.setSingleStep(step)
+            self.value.setValue(0)
+            self.value.setSuffix(f"  ({lo:,}~{hi:,})")
+        else:
+            # 이전 옵션의 범위가 남아 오해를 주지 않게 비운다
+            self.value.setRange(0, 0)
+            self.value.setSuffix("  수치 조건 불가")
         self.changed.emit()
 
     def is_set(self) -> bool:
@@ -254,8 +279,8 @@ class FixedEffectRow(QWidget):
         if not data:
             return None
         axis, sub = data
-        floor = self.value.value()
-        top = self.TRAIT_MAX if axis == AXIS_COMBAT else self.SPECIAL_MAX
+        floor = self.value.value() if self.value.isEnabled() else 0
+        top = self.value.maximum()
         return {
             "FirstOption": axis,
             "SecondOption": sub.get("Value"),
@@ -319,11 +344,11 @@ class SearchPanel(QWidget):
         self.bracelet_box = QGroupBox("팔찌 조건")
         bl = QFormLayout(self.bracelet_box)
 
-        self.slot_random = QComboBox()
-        self.slot_random.addItem("지정 안 함", None)
-        for n in (2, 3):  # 1 은 실측상 매물이 없다
-            self.slot_random.addItem(f"{n}개", n)
-        bl.addRow("부여 효과 수량", self.slot_random)
+        # 부여 효과 수량은 3 으로 고정한다 — 2개짜리는 비교 대상이 아니다.
+        # 폼에 두지 않고 요청에만 싣는다 (§3.1 고정 조건은 배지로만).
+        fixed_note = QLabel("부여 효과 수량 3 고정")
+        fixed_note.setObjectName("badge")
+        bl.addRow("", fixed_note)
 
         self.slot_fixed = QComboBox()
         self.slot_fixed.addItem("지정 안 함", None)
@@ -401,7 +426,10 @@ class SearchPanel(QWidget):
 
         if is_bracelet:
             traits = opt.option_pool(self._payload, code, axis=AXIS_COMBAT)
-            specials = opt.option_pool(self._payload, code, axis=AXIS_SPECIAL)
+            # T4 고대에 없는 16개를 빼고, 범위 지정 가능한 것을 앞으로
+            specials = opt.sort_bracelet_pool(
+                opt.option_pool(self._payload, code, axis=AXIS_SPECIAL)
+            )
             for row in self.fixed_rows:
                 row.load(traits, specials)
             self._update_fixed_hint()
@@ -458,18 +486,20 @@ class SearchPanel(QWidget):
 
         if is_bracelet:
             # 수량은 정확일치. MinValue 만 보내면 무시되므로 Max 까지 같은 값으로 채운다.
-            for combo, sub in (
-                (self.slot_random, SUB_RANDOM_COUNT),
-                (self.slot_fixed, SUB_FIXED_COUNT),
-            ):
-                n = combo.currentData()
-                if n is not None:
-                    etc.append({
-                        "FirstOption": opt.ETC_BRACELET_COUNT,
-                        "SecondOption": sub,
-                        "MinValue": n,
-                        "MaxValue": n,
-                    })
+            etc.append({
+                "FirstOption": opt.ETC_BRACELET_COUNT,
+                "SecondOption": SUB_RANDOM_COUNT,
+                "MinValue": FIXED_RANDOM_SLOTS,
+                "MaxValue": FIXED_RANDOM_SLOTS,
+            })
+            n = self.slot_fixed.currentData()
+            if n is not None:
+                etc.append({
+                    "FirstOption": opt.ETC_BRACELET_COUNT,
+                    "SecondOption": SUB_FIXED_COUNT,
+                    "MinValue": n,
+                    "MaxValue": n,
+                })
             etc += [e for e in (r.to_etc() for r in self.fixed_rows) if e]
 
         self.search_requested.emit(
@@ -500,8 +530,7 @@ class SearchPanel(QWidget):
                 parts.append("+".join(names))
             elif names:
                 parts.append(f"{names[0]} 보유")
-            if self.slot_random.currentData():
-                parts.append(f"부여 {self.slot_random.currentData()}")
+            parts.append(f"부여 {FIXED_RANDOM_SLOTS}")
             if self.slot_fixed.currentData():
                 parts.append(f"고정 {self.slot_fixed.currentData()}")
         return " · ".join(parts)

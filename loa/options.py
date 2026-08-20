@@ -136,6 +136,48 @@ def option_key(sub: dict) -> str:
     return f"{text}%" if pct else text
 
 
+BRACELET_RANGES_PATH = (
+    Path(__file__).resolve().parent.parent / "data" / "bracelet_ranges.json"
+)
+_bracelet_ranges: dict | None = None
+
+
+def bracelet_ranges(path: Path = BRACELET_RANGES_PATH) -> dict:
+    """옵션별 관측 범위와 필터 가능 여부 (probe_bracelet_ranges.py 산출).
+
+    이 두 축은 EtcSubs 에 EtcValues 가 없어 API 가 값 목록을 주지 않는다.
+    그래서 관측표가 없으면 폼에서 범위를 알 수 없다.
+    """
+    global _bracelet_ranges
+    if _bracelet_ranges is None:
+        try:
+            _bracelet_ranges = json.loads(path.read_text(encoding="utf-8")).get("options", {})
+        except (json.JSONDecodeError, OSError, FileNotFoundError):
+            _bracelet_ranges = {}
+    return _bracelet_ranges
+
+
+def sort_bracelet_pool(pool: list[dict]) -> list[dict]:
+    """T4 고대에 없는 옵션은 빼고, 범위 지정 가능한 것을 앞으로 보낸다.
+
+    26개 중 16개는 T4 고대 매물이 0건이다 (T3 시절 옵션). 목록에 두면 헛돌게 된다.
+    """
+    info = bracelet_ranges()
+    out = []
+    for sub in pool:
+        meta = info.get(sub.get("Text", ""))
+        if meta is not None and not meta.get("exists", True):
+            continue
+        out.append(sub)
+    return sorted(
+        out,
+        key=lambda s: (
+            not (info.get(s.get("Text", ""), {}).get("rangeable")),
+            s.get("Text", ""),
+        ),
+    )
+
+
 def quality_steps(payload: dict) -> list[int]:
     """ItemGradeQualities — 품질 하한 필터로 쓸 수 있는 값들."""
     return list(payload.get("ItemGradeQualities") or [])

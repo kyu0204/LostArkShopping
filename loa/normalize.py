@@ -24,6 +24,10 @@ TYPE_ARK = "ARK_PASSIVE"
 # 팔찌 전용 (실측)
 TYPE_BRACELET_SPECIAL = "BRACELET_SPECIAL_EFFECTS"
 TYPE_BRACELET_SLOT = "BRACELET_RANDOM_SLOT"
+# 같은 '팔찌 특수 효과' 축(FirstOption=5)으로 검색되는데 응답 Type 만 다르게 온다.
+# 예: '공격 및 이동 속도 증가' → ABILITY_ENGRAVE, Value 5.0
+# 이걸 안 받으면 값이 없는 옵션으로 오인한다.
+TYPE_ABILITY_ENGRAVE = "ABILITY_ENGRAVE"
 
 
 class NormalizeWarning(Exception):
@@ -58,7 +62,7 @@ def normalize_item(raw: dict[str, Any], category_code: int, raw_index: int) -> L
             else:
                 # 팔찌의 치명/특화/신속 등 전투 특성
                 combat_stats[oname] = val
-        elif otype == TYPE_BRACELET_SPECIAL:
+        elif otype in (TYPE_BRACELET_SPECIAL, TYPE_ABILITY_ENGRAVE):
             bracelet_special[oname] = UpgradeOption(
                 name=oname, value=val, is_percentage=bool(o.get("IsValuePercentage"))
             )

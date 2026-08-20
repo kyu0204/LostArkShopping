@@ -251,15 +251,14 @@ class CardDelegate(QStyledItemDelegate):
             )
 
         # 옵션 아래로 거래 횟수 · 남은 시간
+        # 팔찌는 교환이 1회로 고정이라 거래 횟수가 정보량 0 이다 — 빼고 시간만 남긴다.
+        parts = [] if ls.is_bracelet else [f"거래 횟수 {ls.trade_allow_count}회"]
+        parts.append(f"남은 시간 {_remaining(ls.end_date)}")
         foot = QRect(rect.left(), rect.top() + line_h * 3, rect.width(), fm.height() + 2)
         painter.setPen(dim)
         painter.drawText(
             foot, Qt.AlignLeft | Qt.AlignVCenter,
-            fm.elidedText(
-                f"거래 횟수 {ls.trade_allow_count}회      "
-                f"남은 시간 {_remaining(ls.end_date)}",
-                Qt.ElideRight, foot.width(),
-            ),
+            fm.elidedText("      ".join(parts), Qt.ElideRight, foot.width()),
         )
 
     # ---- 가격 ----
