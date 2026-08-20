@@ -1,0 +1,39 @@
+{
+  "_note": [
+    "공식 확률 공개 페이지의 팔찌 T4 수치 범위를 옮긴 표다.",
+    "출처: https://m-lostark.game.onstove.com/Probability/팔찌 T4",
+    "",
+    "여기 실린 옵션들은 경매장 API 가 실제 수치를 응답에 담지 않는다.",
+    "  - '공격 및 이동 속도 증가'와 '이동기 및 기상기 재사용 대기시간 감소'는",
+    "    100건을 훑어도 값이 전부 5.0 이었다. 실제 수치가 아니라 자리표시자다.",
+    "  - '시드 이하 주는/받는 피해'와 '피격 이상 면역 효과'는 값이 항상 0.0 이다.",
+    "따라서 API 필터도, 수집 후 자체 필터도 불가능하다.",
+    "화면에는 '이 옵션이 가질 수 있는 범위'를 알리는 용도로만 쓴다.",
+    "",
+    "값이 관측되고 필터도 먹는 옵션은 data/bracelet_ranges.json 쪽에 있다."
+  ],
+  "source": "https://m-lostark.game.onstove.com/Probability/팔찌 T4",
+  "api_exposes_value": false,
+  "options": {
+    "공격 및 이동 속도 증가": {
+      "고대": { "min": 4, "max": 6, "steps": 3, "unit": "%" },
+      "유물": { "min": 3, "max": 5, "steps": 3, "unit": "%" }
+    },
+    "이동기 및 기상기 재사용 대기시간 감소": {
+      "고대": { "min": 8, "max": 12, "steps": 3, "unit": "%" },
+      "유물": { "min": 6, "max": 10, "steps": 3, "unit": "%" }
+    },
+    "시드 이하 주는 피해 증가": {
+      "고대": { "min": 4, "max": 6, "steps": 3, "unit": "%" },
+      "유물": { "min": 3, "max": 5, "steps": 3, "unit": "%" }
+    },
+    "시드 이하 받는 피해 감소": {
+      "고대": { "min": 6, "max": 10, "steps": 3, "unit": "%" },
+      "유물": { "min": 4, "max": 8, "steps": 3, "unit": "%" }
+    },
+    "피격 이상 면역 효과": {
+      "고대": { "min": 60, "max": 80, "steps": 3, "unit": "초", "lower_is_better": true },
+      "유물": { "min": 70, "max": 90, "steps": 3, "unit": "초", "lower_is_better": true }
+    }
+  }
+}

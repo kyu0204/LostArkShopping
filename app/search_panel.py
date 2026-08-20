@@ -262,9 +262,17 @@ class FixedEffectRow(QWidget):
             self.value.setValue(0)
             self.value.setSuffix(f"  ({lo:,}~{hi:,})")
         else:
-            # 이전 옵션의 범위가 남아 오해를 주지 않게 비운다
+            # 이전 옵션의 범위가 남아 오해를 주지 않게 비운다.
+            # 대신 공식 확률표의 범위를 알려준다 — 값이 있긴 하나 API 가 안 준다.
             self.value.setRange(0, 0)
-            self.value.setSuffix("  수치 조건 불가")
+            official = opt.official_range(sub.get("Text", ""))
+            if official:
+                unit = official.get("unit", "")
+                self.value.setSuffix(
+                    f"  {official['min']}~{official['max']}{unit} · API 미제공"
+                )
+            else:
+                self.value.setSuffix("  수치 조건 불가")
         self.changed.emit()
 
     def is_set(self) -> bool:

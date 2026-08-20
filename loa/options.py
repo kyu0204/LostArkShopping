@@ -157,6 +157,28 @@ def bracelet_ranges(path: Path = BRACELET_RANGES_PATH) -> dict:
     return _bracelet_ranges
 
 
+OFFICIAL_RANGES_PATH = (
+    Path(__file__).resolve().parent.parent / "data" / "bracelet_official_ranges.json"
+)
+_official: dict | None = None
+
+
+def official_range(name: str, grade: str = "고대") -> dict | None:
+    """공식 확률표의 수치 범위. API 가 값을 안 주는 옵션을 화면에 알리는 용도다.
+
+    이 범위로는 필터할 수 없다 — 응답에 구분 가능한 숫자가 없기 때문이다.
+    """
+    global _official
+    if _official is None:
+        try:
+            _official = json.loads(
+                OFFICIAL_RANGES_PATH.read_text(encoding="utf-8")
+            ).get("options", {})
+        except (json.JSONDecodeError, OSError, FileNotFoundError):
+            _official = {}
+    return (_official.get(name) or {}).get(grade)
+
+
 def sort_bracelet_pool(pool: list[dict]) -> list[dict]:
     """T4 고대에 없는 옵션은 빼고, 범위 지정 가능한 것을 앞으로 보낸다.
 

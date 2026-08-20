@@ -289,6 +289,58 @@ class ListingTableModel(QAbstractTableModel):
         lines = self._composite_lines(ls, key)
         return "  ·  ".join(t for t, _ in lines) if lines else "—"
 
+    @staticmethod
+    def _bracelet_diff(ls: Listing, base: Listing) -> list[tuple[str, object]]:
+        """팔찌 비교 축 — 장신구와 완전히 다르다.
+
+        힘민지·연마 옵션이 아니라 전투 특성 · 특수 효과 · 효과 수량으로 본다.
+        일치하는 항목은 줄을 만들지 않는다.
+        """
+        out: list[tuple[str, object]] = []
+
+        # 전투 특성 — 한쪽에만 있으면 없는 쪽을 0 으로 놓고 뺀다
+        for name in sorted(set(ls.combat_stats) | set(base.combat_stats)):
+            mine = ls.combat_stats.get(name, 0.0)
+            theirs = base.combat_stats.get(name, 0.0)
+            if mine == theirs:
+                continue
+            diff = mine - theirs
+            out.append((f"{name} {_fmt_option_delta(diff)}", "up" if diff > 0 else "down"))
+
+        # 특수 효과 — 수치가 0 으로만 오는 옵션이 있어 뺄셈이 무의미하다.
+        # 그런 것은 보유 여부로만 표시한다.
+        for name in sorted(set(ls.bracelet_special) | set(base.bracelet_special)):
+            a = ls.bracelet_special.get(name)
+            b = base.bracelet_special.get(name)
+            av = a.value if a else None
+            bv = b.value if b else None
+            if av == bv:
+                continue
+            suffix = "%" if (a or b).is_percentage else ""
+            if not av or not bv:  # 값이 0 이거나 한쪽에만 있음
+                if a and not b:
+                    out.append((f"{name} 추가", "up"))
+                elif b and not a:
+                    out.append((f"{name} 없음", "down"))
+                else:
+                    diff = (av or 0) - (bv or 0)
+                    out.append((f"{name} {_fmt_option_delta(diff)}{suffix}",
+                                "up" if diff > 0 else "down"))
+            else:
+                diff = av - bv
+                out.append((f"{name} {_fmt_option_delta(diff)}{suffix}",
+                            "up" if diff > 0 else "down"))
+
+        # 효과 수량
+        for name in sorted(set(ls.bracelet_slots) | set(base.bracelet_slots)):
+            mine = ls.bracelet_slots.get(name, 0.0)
+            theirs = base.bracelet_slots.get(name, 0.0)
+            if mine == theirs:
+                continue
+            diff = mine - theirs
+            out.append((f"{name} {_fmt_option_delta(diff)}", "up" if diff > 0 else "down"))
+        return out
+
     def _summary_lines(self, ls: Listing) -> list[tuple[str, object]]:
         """기준 행 대비 차이 요약 — HANDOFF §6.5 의 1층(관측된 사실).
 
@@ -312,6 +364,12 @@ class ListingTableModel(QAbstractTableModel):
                 )
         elif ls.buy_price is None:
             out.append(("즉구 없음 · 비교 불가", None))
+
+        if ls.is_bracelet:
+            out += self._bracelet_diff(ls, base)
+            if not out:
+                out.append(("차이 없음", None))
+            return out[:MAX_SUMMARY_LINES]
 
         # 이하 스탯 — 오르면 녹색, 내리면 빨강
         if ls.stat_main and base.stat_main and ls.stat_main != base.stat_main:
