@@ -47,11 +47,15 @@ QLabel#badge {
     background: palette(alternate-base);
 }
 QLabel#hint  { color: palette(dark); font-size: 11px; }
+QGroupBox { margin-top: 8px; }
 QLabel#cohort { font-size: 15px; font-weight: 600; }
 QLabel#fixed  { color: palette(dark); }
 QLabel#hidden_note { color: palette(dark); font-size: 11px; }
 QTableView { gridline-color: palette(midlight); }
 """
+
+# 검색 폼이 실제로 요구하는 폭 (부위에 따라 512~544px + 스크롤바 여유)
+SEARCH_PANEL_WIDTH = 570
 
 
 class MainWindow(QMainWindow):
@@ -64,7 +68,8 @@ class MainWindow(QMainWindow):
         self._grades = q.load_upgrade_grades()
 
         self.setWindowTitle("로스트아크 경매장 매물 비교기")
-        self.resize(1240, 780)
+        # 검색 폼 570 + 카드 최소 738 = 1308. 여유를 둔다.
+        self.resize(1480, 820)
         self.setStyleSheet(STYLE)
 
         splitter = QSplitter(Qt.Horizontal)
@@ -79,13 +84,18 @@ class MainWindow(QMainWindow):
         self.left.setFrameShape(QScrollArea.NoFrame)
         self.left.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         # 옵션 이름이 길다 ('세레나데, 신앙, 조화 게이지 획득량 증가').
-        # 좁게 잡으면 콤보가 글자를 잘라먹는다.
-        self.left.setMinimumWidth(420)
-        self.left.setMaximumWidth(620)
+        # 폼이 실제로 요구하는 폭은 부위에 따라 512~544px 다.
+        # 그보다 좁게 주면 콤보가 잘리거나 가로 스크롤이 생긴다.
+        self.left.setMinimumWidth(500)
+        self.left.setMaximumWidth(760)
         splitter.addWidget(self.left)
 
         splitter.addWidget(self._build_results())
+        splitter.setCollapsible(0, False)  # 접기는 버튼으로만 (드래그로 사고 방지)
+        splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
+        # 기본 배분을 폼이 요구하는 폭으로 준다. 안 그러면 비율로 나눠 잘린다.
+        splitter.setSizes([SEARCH_PANEL_WIDTH, max(1, self.width() - SEARCH_PANEL_WIDTH)])
         self.splitter = splitter
         self.setCentralWidget(splitter)
 
@@ -302,7 +312,13 @@ class MainWindow(QMainWindow):
     # ---- 필터 / 내보내기 ----
 
     def _on_collapse_toggled(self, collapsed: bool) -> None:
+        if collapsed:
+            # 접기 전 폭을 기억했다가 펼 때 그대로 돌려준다
+            self._panel_width = self.splitter.sizes()[0] or SEARCH_PANEL_WIDTH
         self.left.setVisible(not collapsed)
+        if not collapsed:
+            width = getattr(self, "_panel_width", SEARCH_PANEL_WIDTH)
+            self.splitter.setSizes([width, max(1, self.splitter.width() - width)])
         self.collapse_button.setText("▶ 검색" if collapsed else "◀ 검색 숨기기")
 
     def _on_sort_changed(self, *_) -> None:
