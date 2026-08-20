@@ -117,7 +117,65 @@ def main() -> int:
     print("\n=== 5. 대조군 (존재하지 않는 축) ===")
     run(client, "FirstOption=99",
         [{"FirstOption": 99, "SecondOption": 1, "MinValue": 1, "MaxValue": 1}], base)
+
+    # ---- 특수 효과 축 ----
+    print("\n=== 6. 팔찌 특수 효과 축 (FirstOption=5) ===")
+    pool = opt.option_pool(client and payload_cache(client), BRACELET, axis=AXIS_SPECIAL)
+    sample = {s["Text"]: s["Value"] for s in pool}
+    print(f"  옵션 {len(sample)}개 · EtcValues 보유: "
+          f"{sum(1 for s in pool if s.get('EtcValues'))}개")
+    for text in ("마법 방어력", "전투 중 생명력 회복량", "최대 생명력"):
+        if text not in sample:
+            continue
+        run(client, f"{text} (수치 미지정)",
+            [{"FirstOption": AXIS_SPECIAL, "SecondOption": sample[text],
+              "MinValue": None, "MaxValue": None}], base)
+        run(client, f"{text} 3000~99999",
+            [{"FirstOption": AXIS_SPECIAL, "SecondOption": sample[text],
+              "MinValue": 3000, "MaxValue": 99999}], base)
+
+    # ---- 고정 효과는 특성 + 특수 합쳐서 최대 2개인가 ----
+    print("\n=== 7. 특성 + 특수 효과 합계 제약 ===")
+    magic = sample.get("마법 방어력")
+    if magic:
+        run(client, "특성1(특화) + 특수1(마법 방어력)",
+            [{"FirstOption": AXIS_COMBAT, "SecondOption": 16,
+              "MinValue": None, "MaxValue": None},
+             {"FirstOption": AXIS_SPECIAL, "SecondOption": magic,
+              "MinValue": None, "MaxValue": None}], base)
+        run(client, "특성2(특화+치명) + 특수1(마법 방어력)",
+            [{"FirstOption": AXIS_COMBAT, "SecondOption": 16,
+              "MinValue": None, "MaxValue": None},
+             {"FirstOption": AXIS_COMBAT, "SecondOption": 15,
+              "MinValue": None, "MaxValue": None},
+             {"FirstOption": AXIS_SPECIAL, "SecondOption": magic,
+              "MinValue": None, "MaxValue": None}], base)
+
+    # ---- 관측 분포로 확인 ----
+    print("\n=== 8. 관측: 특성 + 특수 효과 개수 합 ===")
+    try:
+        resp = client.search_auctions(build_payload(BRACELET, 1, grade_quality=None))
+        combos = Counter()
+        traits_max = 0
+        for ls in normalize_response(resp, BRACELET):
+            combos[(len(ls.combat_stats), len(ls.bracelet_special))] += 1
+            for v in ls.combat_stats.values():
+                traits_max = max(traits_max, int(v))
+        print(f"  (특성수, 특수수) 분포: {dict(sorted(combos.items()))}")
+        print(f"  관측된 전투 특성 최대 수치: {traits_max}")
+    except LostArkAPIError as exc:
+        print(f"  HTTP {exc.status}")
     return 0
+
+
+_payload = None
+
+
+def payload_cache(client):
+    global _payload
+    if _payload is None:
+        _payload = opt.fetch_options(client)
+    return _payload
 
 
 if __name__ == "__main__":
