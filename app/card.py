@@ -42,8 +42,11 @@ LEFT_LABEL_W = 38  # '주스탯' / '체력'
 LEFT_VALUE_W = 60  # 15,393
 LEFT_QUAL_W = 26  # 91
 LEFT_W = LEFT_LABEL_W + LEFT_VALUE_W + LEFT_QUAL_W + 4  # 128
-PRICE_W = 150
+# 가격 열: 라벨 + 오른쪽 정렬 금액. 금액이 제일 길다 —
+# '4,500,000G' 가 굵은 큰 글씨로 150px, 8자리면 165px 다.
+PRICE_LABEL_W = 62
 PRICE_PAD_RIGHT = 10  # 골드 숫자가 구분선에 붙지 않게
+PRICE_W = PRICE_LABEL_W + 168 + PRICE_PAD_RIGHT
 SUMMARY_W = 270  # 기준 대비 (맨 우측)
 MIN_MIDDLE = 190
 
@@ -281,18 +284,19 @@ class CardDelegate(QStyledItemDelegate):
         # BidPrice 0 은 '0골드에 입찰됨'이 아니라 '아직 아무도 입찰 안 함'이다.
         # 그대로 찍으면 오해를 주므로, 입찰이 없으면 다음 입찰 최소액을 대신 보여준다.
         # (BidStartPrice = 현재가의 약 105%. 실측)
+        # 라벨은 짧게, 부가 정보는 값 쪽에. 라벨 칸이 좁아 길면 잘린다.
         if ls.bid_count > 0:
-            bid_label = f"입찰가 ({ls.bid_count}회)"
-            bid_text, bid_color = f"{ls.bid_price:,}G", text
+            bid_label = "입찰가"
+            bid_text, bid_color = f"{ls.bid_price:,}G ({ls.bid_count}회)", text
         else:
-            bid_label = "최소 입찰가"
+            bid_label = "최소 입찰"
             bid_text, bid_color = f"{ls.bid_start_price:,}G", dim
 
         rows: list[tuple[str, str, QFont, QColor]] = [
             ("즉구가", _fmt_gold(ls.buy_price), big, accent if ls.buy_price else dim),
             (bid_label, bid_text, option.font, bid_color),
         ]
-        label_w = 74
+        label_w = PRICE_LABEL_W
         for i, (label, value, font, color) in enumerate(rows):
             y = rect.top() + i * line_h
             painter.setFont(option.font)
