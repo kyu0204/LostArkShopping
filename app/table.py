@@ -188,6 +188,15 @@ class ListingTableModel(QAbstractTableModel):
     def baseline_row(self) -> int | None:
         return self._baseline
 
+    def max_summary_lines(self) -> int:
+        """요약 줄 수의 최댓값. 카드 높이를 여기에 맞춰 잘리지 않게 한다.
+
+        행마다 높이를 달리하면 목록이 들쭉날쭉해지므로 최댓값으로 통일한다.
+        """
+        if not self._rows:
+            return 1
+        return max((len(self._summary_lines(r)) for r in self._rows), default=1)
+
     def set_baseline(self, row: int) -> None:
         if not (0 <= row < len(self._rows)):
             return
@@ -197,6 +206,9 @@ class ListingTableModel(QAbstractTableModel):
         top = self.index(0, 0)
         bottom = self.index(self.rowCount() - 1, self.columnCount() - 1)
         self.dataChanged.emit(top, bottom)
+        # 기준이 바뀌면 요약 줄 수가 달라져 카드 높이도 바뀐다.
+        # dataChanged 만으로는 뷰가 크기를 다시 묻지 않는다.
+        self.layoutChanged.emit()
 
     def listing_at(self, row: int) -> Listing | None:
         return self._rows[row] if 0 <= row < len(self._rows) else None

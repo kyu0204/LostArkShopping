@@ -23,7 +23,8 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QRadioButton,
-    QSpinBox,  # noqa: F401  (TraitRow 에서 사용)
+    QSizePolicy,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -62,7 +63,12 @@ class OptionRow(QWidget):
         lay.setSpacing(6)
 
         self.option = QComboBox()
-        self.option.setMinimumWidth(210)
+        # '세레나데, 신앙, 조화 게이지 획득량 증가' 가 안 잘리게.
+        # 팝업은 내용에 맞춰 늘리고, 닫힌 콤보도 충분히 넓게 잡는다.
+        self.option.setMinimumWidth(250)
+        self.option.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self.option.view().setTextElideMode(Qt.ElideNone)
+        self.option.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.value = QComboBox()
         self.value.setMinimumWidth(128)
         self.value.setEnabled(False)
@@ -201,7 +207,10 @@ class FixedEffectRow(QWidget):
         lay.setSpacing(6)
 
         self.option = QComboBox()
-        self.option.setMinimumWidth(150)
+        self.option.setMinimumWidth(210)
+        self.option.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self.option.view().setTextElideMode(Qt.ElideNone)
+        self.option.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.value = QSpinBox()
         self.value.setRange(0, self.TRAIT_MAX)
         self.value.setSingleStep(1)  # 상세 수치를 직접 입력한다

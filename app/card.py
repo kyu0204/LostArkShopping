@@ -43,6 +43,7 @@ LEFT_VALUE_W = 60  # 15,393
 LEFT_QUAL_W = 26  # 91
 LEFT_W = LEFT_LABEL_W + LEFT_VALUE_W + LEFT_QUAL_W + 4  # 128
 PRICE_W = 150
+PRICE_PAD_RIGHT = 10  # 골드 숫자가 구분선에 붙지 않게
 SUMMARY_W = 270  # 기준 대비 (맨 우측)
 MIN_MIDDLE = 190
 
@@ -88,12 +89,14 @@ class CardDelegate(QStyledItemDelegate):
         badge_h = max(BADGE + 3, fm.height() + 4)
         left = ICON + 4 + line_h * 2
         middle = badge_h * 3 + fm.height() + 2
+        # 요약을 '외 N건'으로 접지 않는다 — 가장 긴 카드에 높이를 맞춘다
+        summary = (self._model.max_summary_lines() + 1) * (fm.height() + 2) + 4
         # 뷰 폭을 채운다. 안 그러면 카드가 고정 폭에서 잘린 채로 남는다.
         view = self.parent()
         width = view.viewport().width() - 4 if view and view.viewport() else 900
         return QSize(
             max(LEFT_W + MIN_MIDDLE + PRICE_W + SUMMARY_W, width),
-            PAD * 2 + max(left, middle),
+            PAD * 2 + max(left, middle, summary),
         )
 
     # ---- 그리기 ----
@@ -132,7 +135,10 @@ class CardDelegate(QStyledItemDelegate):
 
         body = rect.adjusted(PAD, PAD, -PAD, -PAD)
         summary = QRect(body.right() - SUMMARY_W, body.top(), SUMMARY_W, body.height())
-        price = QRect(summary.left() - GAP - PRICE_W, body.top(), PRICE_W, body.height())
+        # 가격은 오른쪽 정렬이라 구분선에 딱 붙는다. 사이를 띄운다.
+        price = QRect(
+            summary.left() - GAP * 2 - PRICE_W, body.top(), PRICE_W, body.height()
+        )
         middle = QRect(
             body.left() + LEFT_W + GAP, body.top(),
             price.left() - GAP - (body.left() + LEFT_W + GAP), body.height(),
@@ -295,7 +301,10 @@ class CardDelegate(QStyledItemDelegate):
                              Qt.AlignLeft | Qt.AlignVCenter, label)
             painter.setFont(font)
             painter.setPen(color)
-            cell = QRect(rect.left() + label_w, y, rect.width() - label_w, line_h)
+            # 오른쪽 여백 — 숫자가 구분선에 닿지 않게
+            cell = QRect(
+                rect.left() + label_w, y, rect.width() - label_w - PRICE_PAD_RIGHT, line_h
+            )
             painter.drawText(
                 cell, Qt.AlignRight | Qt.AlignVCenter,
                 QFontMetrics(font).elidedText(value, Qt.ElideRight, cell.width()),
@@ -314,26 +323,19 @@ class CardDelegate(QStyledItemDelegate):
         small.setPointSizeF(max(7.5, option.font.pointSizeF() - 0.5))
         fm = QFontMetrics(small)
         line_h = fm.height() + 2
-        capacity = max(1, rect.height() // line_h)
 
         painter.setFont(small)
         painter.setPen(dim)
         painter.drawText(QRect(rect.left(), rect.top(), rect.width(), line_h),
                          Qt.AlignLeft | Qt.AlignVCenter, "기준 대비")
 
-        shown = lines[: capacity - 1]
-        for i, (body, kind) in enumerate(shown):
+        # 줄 수만큼 카드 높이가 이미 확보돼 있다 (sizeHint). 접지 않고 전부 그린다.
+        for i, (body, kind) in enumerate(lines):
             color = None if selected else kind_color(kind, option.palette)
             painter.setPen(color or text)
             painter.drawText(
                 QRect(rect.left(), rect.top() + (i + 1) * line_h, rect.width(), line_h),
                 Qt.AlignLeft | Qt.AlignVCenter,
                 fm.elidedText(body, Qt.ElideRight, rect.width()),
-            )
-        if len(lines) > len(shown):
-            painter.setPen(dim)
-            painter.drawText(
-                QRect(rect.left(), rect.bottom() - line_h, rect.width(), line_h),
-                Qt.AlignLeft | Qt.AlignVCenter, f"… 외 {len(lines) - len(shown)}건",
             )
         painter.setFont(option.font)

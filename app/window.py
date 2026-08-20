@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSplitter,
     QVBoxLayout,
     QWidget,
@@ -70,15 +71,22 @@ class MainWindow(QMainWindow):
 
         self.panel = SearchPanel(options_payload, self._grades)
         self.panel.search_requested.connect(self._start_search)
-        left = QWidget()
-        left_lay = QVBoxLayout(left)
-        left_lay.addWidget(self.panel)
-        left.setMinimumWidth(360)
-        left.setMaximumWidth(460)
-        splitter.addWidget(left)
+
+        # 스크롤을 달아 폼이 길어져도 창을 밀지 않게 한다
+        self.left = QScrollArea()
+        self.left.setWidget(self.panel)
+        self.left.setWidgetResizable(True)
+        self.left.setFrameShape(QScrollArea.NoFrame)
+        self.left.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        # 옵션 이름이 길다 ('세레나데, 신앙, 조화 게이지 획득량 증가').
+        # 좁게 잡으면 콤보가 글자를 잘라먹는다.
+        self.left.setMinimumWidth(420)
+        self.left.setMaximumWidth(620)
+        splitter.addWidget(self.left)
 
         splitter.addWidget(self._build_results())
         splitter.setStretchFactor(1, 1)
+        self.splitter = splitter
         self.setCentralWidget(splitter)
 
         self._build_status()
@@ -92,6 +100,14 @@ class MainWindow(QMainWindow):
         lay.setSpacing(8)
 
         head = QHBoxLayout()
+
+        # 검색 폼 접기 — 표시 공간을 넓히는 용도 (F2 로도 토글)
+        self.collapse_button = QPushButton("◀ 검색 숨기기")
+        self.collapse_button.setCheckable(True)
+        self.collapse_button.setToolTip("F2")
+        self.collapse_button.toggled.connect(self._on_collapse_toggled)
+        head.addWidget(self.collapse_button)
+
         self.cohort_label = QLabel("검색 조건을 지정하고 Enter")
         self.cohort_label.setObjectName("cohort")
         head.addWidget(self.cohort_label)
@@ -163,6 +179,7 @@ class MainWindow(QMainWindow):
         for seq in (QKeySequence(Qt.Key_Return), QKeySequence(Qt.Key_Enter)):
             QShortcut(seq, self, activated=self.panel.search_button.click)
         QShortcut(QKeySequence(Qt.Key_Escape), self, activated=self._cancel)
+        QShortcut(QKeySequence(Qt.Key_F2), self, activated=self.collapse_button.toggle)
 
         quit_action = QAction("종료", self)
         quit_action.setShortcut(QKeySequence.Quit)
@@ -283,6 +300,10 @@ class MainWindow(QMainWindow):
             self.table.scrollTo(proxy_index)
 
     # ---- 필터 / 내보내기 ----
+
+    def _on_collapse_toggled(self, collapsed: bool) -> None:
+        self.left.setVisible(not collapsed)
+        self.collapse_button.setText("▶ 검색" if collapsed else "◀ 검색 숨기기")
 
     def _on_sort_changed(self, *_) -> None:
         field = ListingTableModel.SORT_FIELDS.get(self.sort_field.currentText(), "buy_price")
