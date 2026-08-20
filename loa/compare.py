@@ -95,6 +95,7 @@ class Transition:
     from_grade: str
     to_grade: str
     pairs: list[Pair] = field(default_factory=list)
+    inconsistent: bool = False  # 같은 옵션의 다른 전이와 앞뒤가 안 맞는다
 
     @property
     def n(self) -> int:
@@ -134,6 +135,8 @@ class Transition:
         """
         if self.n < MIN_PAIRS:
             return "표본 부족"
+        if self.inconsistent:
+            return "상호 불일치"
         if self.low is not None and self.high is not None and self.low < 0 < self.high:
             return "방향 불명"
         band = self.iqr
@@ -192,9 +195,10 @@ class Report:
     usable: int = 0  # 즉구가 있는 매물 수
     threshold: float = DEFAULT_THRESHOLD
     price_span: tuple[int, int] | None = None
+    role: str = ""  # 이 보고서가 다루는 무리 이름 (갈랐을 때만)
 
     def describe(self) -> str:
-        head = f"유효 매물 {self.usable}건 · 연속값 임계치 {self.threshold:g}"
+        head = f"{self.role or '전체'} — 유효 매물 {self.usable}건 · 임계치 {self.threshold:g}"
         if self.price_span:
             head += f" · 가격 {self.price_span[0]:,}~{self.price_span[1]:,}"
         out = [head]
@@ -358,6 +362,122 @@ def estimate_slopes(
     return out
 
 
+def check_consistency(
+    transitions: Sequence[Transition], ordering: dict[str, list[str]] | None = None
+) -> list[str]:
+    """같은 옵션의 전이끼리 앞뒤가 맞는지 본다.
+
+    하→중 과 중→상 을 더하면 하→상 이 나와야 한다. 크게 어긋나면 셋 다 못 믿는다.
+
+    산포 검사를 통과해도 이건 걸린다. 실측에서
+    하→중 +270,000 / 중→상 +29,223 / 하→상 +34,445 가 나온 적이 있는데,
+    개별로는 멀쩡해 보여도 합이 8.7배 어긋났다. 쌍이 옵션이 아니라 다른 것을
+    재고 있다는 신호다.
+    """
+    ordering = ordering or {}
+    by_key: dict[str, dict[tuple[str, str], Transition]] = {}
+    for t in transitions:
+        by_key.setdefault(t.key, {})[(t.from_grade, t.to_grade)] = t
+
+    notes: list[str] = []
+    for key, edges in by_key.items():
+        seq = [ABSENT] + list(ordering.get(key) or q.GRADE_LABELS)
+        for i, a in enumerate(seq):
+            for j in range(i + 1, len(seq)):
+                for k in range(i + 1, j):
+                    b, c = seq[k], seq[j]
+                    first, second, whole = (
+                        edges.get((a, b)),
+                        edges.get((b, c)),
+                        edges.get((a, c)),
+                    )
+                    if not (first and second and whole):
+                        continue
+                    if not (first.enough and second.enough and whole.enough):
+                        continue
+                    total = first.median + second.median
+                    scale = max(abs(whole.median), abs(total), 1.0)
+                    if abs(total - whole.median) > scale * 0.5:
+                        for t in (first, second, whole):
+                            t.inconsistent = True
+                        notes.append(
+                            f"{key}: {a}→{b} + {b}→{c} = {total:+,.0f} 인데 "
+                            f"{a}→{c} 는 {whole.median:+,.0f} — 앞뒤가 안 맞는다"
+                        )
+    return notes
+
+
+def derive_roles(
+    rows: Sequence[tuple[dict, dict, Listing]], keys: set[str]
+) -> tuple[frozenset[str], frozenset[str]] | None:
+    """옵션을 두 무리로 가른다 — 데이터의 동시등장 구조에서 뽑는다.
+
+    같은 부위 안에 **서로 다른 구매자를 겨냥한 옵션**이 섞여 있다.
+    낙인력·세레나데는 서폿이, 적주피·추피는 딜러가 산다. 둘은 거의 같이 안 붙고,
+    붙은 매물은 양쪽 모두에게 쓸모가 없어 헐값이다 (실측: 중앙값 28,000 vs 677).
+
+    이걸 한 코호트로 묶으면 같은 전이가 한쪽에선 +, 다른 쪽에선 - 로 나와
+    '방향 불명'이 된다. 그래서 추정 전에 갈라야 한다.
+
+    가르는 방법: 두 무리로 나눴을 때 **무리를 가로지르는 동시등장이 최소**가 되는
+    분할을 고른다. 옵션 이름을 몰라도 되므로 §4.4 부위 무지성이 유지된다.
+    """
+    ordered = sorted(keys)
+    if not (2 <= len(ordered) <= 10):
+        return None
+
+    co: dict[tuple[str, str], int] = {}
+    for discrete, _c, _l in rows:
+        present = sorted(k for k in ordered if k in discrete)
+        for i, a in enumerate(present):
+            for b in present[i + 1:]:
+                co[(a, b)] = co.get((a, b), 0) + 1
+
+    def weight(a: str, b: str) -> int:
+        return co.get((a, b), 0) if a < b else co.get((b, a), 0)
+
+    best: tuple[int, frozenset, frozenset] | None = None
+    # 첫 옵션을 A 에 고정해 대칭 중복을 없앤다
+    for mask in range(1 << (len(ordered) - 1)):
+        group_a = {ordered[0]}
+        group_b: set[str] = set()
+        for i in range(1, len(ordered)):
+            (group_a if mask >> (i - 1) & 1 else group_b).add(ordered[i])
+        if not group_b:
+            continue
+        cross = sum(weight(a, b) for a in group_a for b in group_b)
+        if best is None or cross < best[0]:
+            best = (cross, frozenset(group_a), frozenset(group_b))
+    if best is None:
+        return None
+
+    cross, a, b = best
+    inner = sum(
+        weight(x, y)
+        for grp in (a, b)
+        for i, x in enumerate(sorted(grp))
+        for y in sorted(grp)[i + 1:]
+    )
+    # 무리 안 동시등장이 가로지르는 것보다 뚜렷하게 많아야 갈랐다고 본다
+    if inner < cross * 2:
+        return None
+    return a, b
+
+
+def role_of(
+    discrete: dict, roles: tuple[frozenset[str], frozenset[str]]
+) -> int | None:
+    """이 매물이 어느 무리인가. 양쪽에 걸치거나 어느 쪽도 없으면 None."""
+    counts = [sum(1 for k in grp if k in discrete) for grp in roles]
+    if counts[0] and counts[1]:
+        return None  # 섞인 매물 — 양쪽 모두에게 쓸모가 적다
+    if counts[0]:
+        return 0
+    if counts[1]:
+        return 1
+    return None
+
+
 def detect_collinearity(
     rows: Sequence[tuple[dict, dict, Listing]], keys: set[str]
 ) -> list[str]:
@@ -424,6 +544,7 @@ def analyze(
 
     pairs = find_pairs(rows, keys, threshold)
     report.transitions = estimate_transitions(pairs)
+    report.notes += check_consistency(report.transitions)
     report.slopes = estimate_slopes(rows, keys)
     report.notes += detect_collinearity(rows, keys)
 
@@ -432,3 +553,57 @@ def analyze(
             "통제된 쌍이 없다 — 임계치를 올리거나 검색을 넓혀라"
         )
     return report
+
+
+def analyze_by_role(
+    listings: Sequence[Listing],
+    grades: dict[str, list[float]],
+    threshold: float = DEFAULT_THRESHOLD,
+    adapter: Callable[[Listing, dict], tuple[dict, dict]] | None = None,
+) -> list[Report]:
+    """구매자가 갈리는 옵션 무리를 나눠 따로 추정한다.
+
+    한 코호트로 묶으면 같은 전이가 무리마다 반대 부호로 나와 못 쓴다.
+    가를 수 없으면 전체 하나로 돌린다 (기존 동작).
+    """
+    adapter = adapter or axes_for
+    usable = [ls for ls in listings if ls.buy_price]
+    if len(usable) < MIN_PAIRS:
+        return [analyze(listings, grades, threshold, adapter)]
+
+    rows = [(*adapter(ls, grades), ls) for ls in usable]
+    keys = major_keys(rows)
+    roles = derive_roles(rows, keys)
+    if roles is None:
+        return [analyze(listings, grades, threshold, adapter)]
+
+    buckets: dict[int | None, list[Listing]] = {0: [], 1: [], None: []}
+    for discrete, _c, ls in rows:
+        buckets[role_of(discrete, roles)].append(ls)
+
+    reports: list[Report] = []
+    for idx in (0, 1):
+        group = buckets[idx]
+        if not group:
+            continue
+        name = " + ".join(sorted(k.rstrip("%") for k in roles[idx]))
+        rep = analyze(group, grades, threshold, adapter)
+        rep.role = name
+        reports.append(rep)
+
+    mixed = buckets[None]
+    if mixed:
+        prices = sorted(ls.buy_price for ls in mixed)
+        reports.append(
+            Report(
+                usable=len(mixed),
+                threshold=threshold,
+                price_span=(prices[0], prices[-1]),
+                role="섞임/해당 없음",
+                notes=[
+                    "두 무리에 걸치거나 어느 쪽도 없는 매물이다. "
+                    "양쪽 모두에게 쓸모가 적어 값이 따로 논다 — 추정에서 제외했다."
+                ],
+            )
+        )
+    return reports

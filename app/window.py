@@ -344,10 +344,11 @@ class MainWindow(QMainWindow):
         """추정은 코호트 전체를 훑는다 — 기준 행과 무관하다."""
         if not self._listings or not self.exchange_dock.isVisible():
             return
-        report = compare.analyze(
+        # 서폿용 옵션과 딜러용 옵션은 구매자가 달라 한 통에 넣으면 추정이 뒤집힌다
+        reports = compare.analyze_by_role(
             self._listings, self._grades, self.exchange.threshold.value()
         )
-        self.exchange.show_report(report)
+        self.exchange.show_reports(reports)
 
     def _on_collapse_toggled(self, collapsed: bool) -> None:
         if collapsed:

@@ -74,11 +74,17 @@ def main() -> int:
                   f"· 추정 가능 {ok}종")
         print()
 
-    report = compare.analyze(listings, grades, args.threshold)
-    print("=== 2층: 추정된 교환비 (§6.5) ===")
-    print(report.describe())
+    print("=== 갈리지 않은 전체 (대조군) ===")
+    print(compare.analyze(listings, grades, args.threshold).describe())
 
-    print("\n=== 근거 쌍 펼치기 (§6.5 — 계산을 감사할 수 있어야 한다) ===")
+    print("\n=== 구매자 무리별 (§6.6 오염 제거) ===")
+    reports = compare.analyze_by_role(listings, grades, args.threshold)
+    for rep in reports:
+        print(rep.describe())
+        print()
+
+    report = max(reports, key=lambda r: len(r.transitions))
+    print(f"=== 근거 쌍 펼치기 — {report.role} (§6.5) ===")
     for t in sorted(report.transitions, key=lambda x: -x.n)[:3]:
         print(f"\n{t.label}  {t.n}쌍")
         for p in sorted(t.pairs, key=lambda x: x.price_delta)[:6]:

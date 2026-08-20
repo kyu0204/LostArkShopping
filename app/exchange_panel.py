@@ -78,23 +78,54 @@ class ExchangePanel(QWidget):
         self.summary.setText("검색하면 교환비를 추정한다")
         self.footer.setText("")
 
-    def show_report(self, report: compare.Report) -> None:
-        self.tree.clear()
-        span = (
-            f" · 가격 {report.price_span[0]:,}~{report.price_span[1]:,}"
-            if report.price_span
-            else ""
-        )
-        self.summary.setText(f"유효 매물 {report.usable}건{span}")
+    def show_reports(self, reports: list[compare.Report]) -> None:
+        """구매자 무리마다 따로 낸다.
 
+        같은 부위 안에 서폿용 옵션과 딜러용 옵션이 섞여 있어, 한 통에 넣으면
+        같은 전이가 무리마다 반대 부호로 나온다.
+        """
+        self.tree.clear()
+        total = sum(r.usable for r in reports)
+        self.summary.setText(
+            f"유효 매물 {total}건 · {len(reports)}개 무리로 분리"
+            if len(reports) > 1
+            else f"유효 매물 {total}건"
+        )
+        notes: list[str] = []
+        for rep in reports:
+            root = self._add_report(rep, grouped=len(reports) > 1)
+            notes += rep.notes
+            if root is not None:
+                root.setExpanded(True)
+        self._set_footer(notes)
+        for i in range(3):
+            self.tree.resizeColumnToContents(i)
+
+    def _add_report(self, report: compare.Report, grouped: bool) -> QTreeWidgetItem | None:
         bold = QFont(self.font())
         bold.setBold(True)
+
+        parent: QTreeWidgetItem | None = None
+        if grouped:
+            parent = QTreeWidgetItem(self.tree)
+            parent.setText(0, report.role or "전체")
+            parent.setFont(0, bold)
+            span = (
+                f"{report.price_span[0]:,}~{report.price_span[1]:,}"
+                if report.price_span
+                else ""
+            )
+            parent.setText(2, f"{report.usable}건")
+            parent.setText(3, span)
+
+        def node() -> QTreeWidgetItem:
+            return QTreeWidgetItem(parent) if parent is not None else QTreeWidgetItem(self.tree)
 
         # 추정된 것 먼저, 그 다음 근거가 많은 순
         for t in sorted(
             report.transitions, key=lambda x: (not x.enough, -x.n, x.label)
         ):
-            item = QTreeWidgetItem(self.tree)
+            item = node()
             item.setText(0, t.label)
             if t.enough:
                 item.setText(1, f"{t.median:+,.0f}골드")
@@ -120,22 +151,21 @@ class ExchangePanel(QWidget):
                 child.setText(3, self._pair_note(p))
 
         for s in report.slopes:
-            item = QTreeWidgetItem(self.tree)
+            item = node()
             item.setText(0, f"{s.stat} 1당")
             item.setText(1, f"{s.gold_per_unit:+,.0f}골드")
             item.setText(2, f"{s.n}건 / {s.groups}그룹")
             item.setText(3, f"R²={s.r2:.2f}" + ("   설명력 낮음" if s.r2 < 0.3 else ""))
+        return parent
 
-        notes = list(report.notes)
+    def _set_footer(self, notes: list[str]) -> None:
         # §6.7 — 용어를 흐리지 않는다
+        notes = list(dict.fromkeys(notes))
         notes.append(
             "BUY_PRICE 오름차순으로 앞쪽만 수집한다. 여기 수치는 '시세'가 아니라 "
             "하한선 기준 상대가다."
         )
         self.footer.setText(" · ".join(notes))
-
-        for i in range(3):
-            self.tree.resizeColumnToContents(i)
 
     @staticmethod
     def _pair_note(pair: compare.Pair) -> str:
