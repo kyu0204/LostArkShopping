@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QRadioButton,
-    QSpinBox,
+    QSpinBox,  # noqa: F401  (TraitRow 에서 사용)
     QVBoxLayout,
     QWidget,
 )
@@ -36,6 +36,9 @@ from .grade_colors import grade_color
 
 BRACELET = 200040
 MAX_OPTION_ROWS = 3
+MAX_TRAIT_ROWS = 2  # 팔찌는 전투 특성이 최대 2개 (3개 지정 시 0건 — 실측)
+AXIS_COMBAT = 2  # 전투 특성
+SUB_FIXED_COUNT, SUB_RANDOM_COUNT = 1, 2  # 고정 효과 수량 / 부여 효과 수량
 
 
 class OptionRow(QWidget):
@@ -171,6 +174,67 @@ class OptionRow(QWidget):
         }
 
 
+class TraitRow(QWidget):
+    """전투 특성 1개 + 최소 수치.
+
+    이 축의 EtcSubs 에는 EtcValues 가 없다 — 정해진 눈금이 아니라 연속값이라
+    콤보 대신 스핀박스를 쓴다. MinValue 는 MaxValue 가 있어야 먹으므로 둘 다 채운다.
+    """
+
+    changed = Signal()
+    MAX_VALUE = 200
+
+    def __init__(self) -> None:
+        super().__init__()
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+
+        self.option = QComboBox()
+        self.option.setMinimumWidth(120)
+        self.value = QSpinBox()
+        self.value.setRange(0, self.MAX_VALUE)
+        self.value.setSingleStep(10)
+        self.value.setPrefix("≥ ")
+        self.value.setSpecialValueText("아무거나")
+        self.value.setEnabled(False)
+
+        lay.addWidget(self.option, 1)
+        lay.addWidget(self.value)
+
+        self.option.currentIndexChanged.connect(self._on_option)
+        self.value.valueChanged.connect(self.changed)
+
+    def load(self, pool: list[dict]) -> None:
+        self.option.blockSignals(True)
+        self.option.clear()
+        self.option.addItem("지정 안 함", None)
+        for sub in pool:
+            self.option.addItem(sub.get("Text", ""), sub)
+        self.option.setCurrentIndex(0)
+        self.option.blockSignals(False)
+        self._on_option()
+
+    def _on_option(self) -> None:
+        self.value.setEnabled(self.option.currentData() is not None)
+        self.changed.emit()
+
+    def is_set(self) -> bool:
+        return self.option.currentData() is not None
+
+    def to_etc(self, axis: int) -> dict | None:
+        sub = self.option.currentData()
+        if not sub:
+            return None
+        floor = self.value.value()
+        return {
+            "FirstOption": axis,
+            "SecondOption": sub.get("Value"),
+            "MinValue": floor or None,
+            "MaxValue": self.MAX_VALUE if floor else None,
+        }
+
+
 class SearchPanel(QWidget):
     search_requested = Signal(dict)
 
@@ -222,6 +286,35 @@ class SearchPanel(QWidget):
         self.floor_hint.setObjectName("hint")
         form.addRow("", self.floor_hint)
 
+        # ---- 팔찌 전용: 효과 수량 + 전투 특성 (실측 축, probe_bracelet.py) ----
+        self.bracelet_box = QGroupBox("팔찌 조건")
+        bl = QFormLayout(self.bracelet_box)
+
+        self.slot_random = QComboBox()
+        self.slot_random.addItem("지정 안 함", None)
+        for n in (2, 3):  # 1 은 실측상 매물이 없다
+            self.slot_random.addItem(f"{n}개", n)
+        bl.addRow("부여 효과 수량", self.slot_random)
+
+        self.slot_fixed = QComboBox()
+        self.slot_fixed.addItem("지정 안 함", None)
+        for n in (1, 2):  # 3 은 실측상 매물이 없다
+            self.slot_fixed.addItem(f"{n}개", n)
+        bl.addRow("고정 효과 수량", self.slot_fixed)
+
+        # 특성을 몇 개 지정하느냐가 곧 1특성 / 2특성이다 (3개 지정하면 0건 — 실측)
+        self.trait_rows: list[TraitRow] = []
+        for i in range(MAX_TRAIT_ROWS):
+            row = TraitRow()
+            row.changed.connect(self._update_trait_hint)
+            self.trait_rows.append(row)
+            bl.addRow("전투 특성" if i == 0 else "", row)
+
+        self.trait_hint = QLabel("")
+        self.trait_hint.setObjectName("hint")
+        bl.addRow("", self.trait_hint)
+        form.addRow(self.bracelet_box)
+
         # ---- 옵션 행 ----
         self.opt_box = QGroupBox("연마 옵션")
         ol = QVBoxLayout(self.opt_box)
@@ -268,15 +361,38 @@ class SearchPanel(QWidget):
         code = self.category.currentData()
         is_bracelet = code == BRACELET
 
-        # 팔찌는 연마도 품질도 없다 (FINDINGS §5)
+        # 팔찌는 연마도 품질도 없다 (FINDINGS §7)
         self.polish_box.setVisible(not is_bracelet)
+        self.floor_hint.setVisible(not is_bracelet)
         self.quality.setEnabled(not is_bracelet)
+        self.bracelet_box.setVisible(is_bracelet)
         self.opt_box.setTitle("팔찌 특수 효과" if is_bracelet else "연마 옵션")
 
         pool = opt.option_pool(self._payload, code, axis=self._axis)
         for row in self.rows:
             row.load(pool)
+
+        if is_bracelet:
+            traits = opt.option_pool(self._payload, code, axis=AXIS_COMBAT)
+            for row in self.trait_rows:
+                row.load(traits)
+            self._update_trait_hint()
         self._apply_floor_rule()
+
+    def _update_trait_hint(self) -> None:
+        """지정한 특성을 '모두 가진' 매물이 나온다 — 정확히 N개라는 뜻이 아니다.
+
+        1개만 지정하면 그 특성을 가진 2특성 매물도 함께 나온다 (실측 확인).
+        API 에 '특성 개수' 축이 없어 정확히 N개로 좁히려면 수집 후 걸러야 한다.
+        """
+        n = sum(1 for r in self.trait_rows if r.is_set())
+        if n == 0:
+            text = "특성을 지정하지 않으면 개수를 가리지 않는다."
+        elif n == 1:
+            text = "지정한 특성을 가진 매물. 2특성 매물도 함께 나온다."
+        else:
+            text = "둘 다 가진 매물 = 2특성."
+        self.trait_hint.setText(text)
 
     def _apply_floor_rule(self) -> None:
         """지정한 옵션 개수만큼 하위 연마 단계를 잠근다 (§3.2)."""
@@ -305,6 +421,22 @@ class SearchPanel(QWidget):
         is_bracelet = code == BRACELET
         etc = [e for e in (r.to_etc(self._axis) for r in self.rows) if e]
 
+        if is_bracelet:
+            # 수량은 정확일치. MinValue 만 보내면 무시되므로 Max 까지 같은 값으로 채운다.
+            for combo, sub in (
+                (self.slot_random, SUB_RANDOM_COUNT),
+                (self.slot_fixed, SUB_FIXED_COUNT),
+            ):
+                n = combo.currentData()
+                if n is not None:
+                    etc.append({
+                        "FirstOption": opt.ETC_BRACELET_COUNT,
+                        "SecondOption": sub,
+                        "MinValue": n,
+                        "MaxValue": n,
+                    })
+            etc += [e for e in (r.to_etc(AXIS_COMBAT) for r in self.trait_rows) if e]
+
         self.search_requested.emit(
             {
                 "category_code": code,
@@ -322,10 +454,21 @@ class SearchPanel(QWidget):
     def _label(self) -> str:
         parts = ["고대", "T4", self.category.currentText()]
         if self.category.currentData() != BRACELET:
-            # 팔찌는 연마도 품질도 없다 (FINDINGS §5) — 라벨에도 넣지 않는다
+            # 팔찌는 연마도 품질도 없다 (FINDINGS §7) — 라벨에도 넣지 않는다
             parts.append(f"{self.polish_group.checkedId()}연마")
             if self.quality.currentData():
                 parts.append(f"품질 {self.quality.currentData()}+")
+        else:
+            # '2특성'은 정확하지만 1개 지정은 '이상'이라 표기를 나눈다
+            names = [r.option.currentText() for r in self.trait_rows if r.is_set()]
+            if len(names) >= 2:
+                parts.append(f"2특성({'+'.join(names)})")
+            elif names:
+                parts.append(f"{names[0]} 보유")
+            if self.slot_random.currentData():
+                parts.append(f"부여 {self.slot_random.currentData()}")
+            if self.slot_fixed.currentData():
+                parts.append(f"고정 {self.slot_fixed.currentData()}")
         return " · ".join(parts)
 
     def set_busy(self, busy: bool) -> None:
